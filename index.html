@@ -1,3 +1,7 @@
+<!-- NOTE: cannot be run in preview mode because of the external CSS requirement. 
+
+Visit the report from the sidebar dropdown instead of clicking "RUN" -->
+
 <!DOCTYPE html>
 <html>
   <head>
@@ -41,7 +45,13 @@
       }
 
       .mp_chart_cell {
-        min-width: 116px;
+        min-width: 189px;
+      }
+
+      .content2 {
+        border-right: solid 1px rgb(155, 155, 155);
+        padding-right: 5px;
+        margin-right: 4px;
       }
     </style>
     <script src="https://cdn.mxpnl.com/libs/mixpanel-platform/build/mixpanel-platform.v0.latest.min.js"></script>
@@ -49,12 +59,13 @@
   <body class="mixpanel-platform-body">
     <div class="mixpanel-platform-section">
       <!--<div id="by" class="mixpanel-platform-label" style="margin-left: 10px; display: none;">by</div>-->
-      <div id="add_event_button" class="add-event-button">Add Another Event</div>
+      <!-- <div id="add_event_button" class="add-event-button">Add Another Event</div> -->
       <!--<div id="propSelect" style="float: left;"></div>-->
+      <div id="eventSelect" style="float: left;" class="eSel"></div>
       <div id="dateSelect" style="float: right;"></div>
-      <div id="eventSelect" style="float: left; clear: both;" class="eSel"></div>
-      <div id="dateResolution" style="float: right;"></div>
+      <div id="dateResolution" style="float: right; clear: both;"></div>
       <div id="dateComparison" style="float: right; clear: both;"></div>
+      <div id="queryType" style="float: right; clear: both;"></div>
       <div style="clear: both;" id="clearBoth"></div>
       <div id="graph"></div>
     </div>
@@ -74,10 +85,6 @@
       var eventSelect = $('#eventSelect').MPEventSelect();
       // var propSelect  = $('#propSelect').MPPropertySelect();
       var dateSelect  = $('#dateSelect').MPDatepicker();
-      dateSelect.val({
-        from: moment().startOf('day'),
-        to: moment().startOf('day').add(1, 'days')
-      });
       var dateResolution = $('#dateResolution').MPSelect({
         items: [
           { label: 'Minute', value: 'minute' },
@@ -87,10 +94,9 @@
           { label: 'Month', value: 'month' }
         ]
       });
-      dateResolution.val('hour');
+      dateResolution.val('day');
       var dateComparison = $('#dateComparison').MPSelect({
         items: [
-          { label: 'Select a Comparison (optional)', value: '' },
           { label: 'Previous Day', value: 'days' },
           { label: 'Previous Week', value: 'weeks' },
           { label: 'Previous Month', value: 'months' },
@@ -98,6 +104,14 @@
         ]
       });
       dateComparison.val('weeks');
+      var queryType = $('#queryType').MPSelect({
+        items: [
+          { label: 'General', value: 'general' },
+          { label: 'Unique', value: 'unique' },
+          { label: 'Average', value: 'average' }
+        ]
+      });
+      queryType.val('general');
       var eventGraph  = $('#graph').MPChart({chartType: 'line'});
       var eventTable  = $('#table').MPTable({
         showPercentages: false,
@@ -105,6 +119,7 @@
       });
       var eventTableData;
       var percentChangeValues;
+      var pastValues;
 
       Number.prototype.round = function(places) {
         return +(Math.round(this + "e+" + places)  + "e-" + places);
@@ -183,7 +198,11 @@
       };
 
       function numberWithCommas(x) {
-        return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        var val = x;
+        if (queryType.val() === 'average') {
+          val = x.round(2);
+        }
+        return val.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
       };
 
       function comparisonChange(data, pastData) {
@@ -234,20 +253,18 @@
         }
       };
 
-      function applyCss(newValue, previousValues, columnIndex, eventNames, date) {
+      function applyCss(newValue, columnIndex, eventNames, date) {
         var percentElement = $('<span></span>');
         var change;
         var oldValue;
         percentElement.addClass('percent');
 
+
         if (dateComparison.val()) {
+          // columnIndex+1 because "Date" is the first column title
+          var previousValue = 
           change = percentChangeValues[eventNames[columnIndex+1]][date];
         } 
-        else {
-          oldValue = previousValues[columnIndex];
-          change = ((newValue - oldValue) / oldValue * 100).round(1);
-        }
-
         percentElement.text(change + '%');
 
         if (change > 0) {
@@ -257,38 +274,40 @@
         }
 
         return {
-          element: percentElement,
+          percentElement: percentElement,
           color: findHexColor(change)
         };
+      };
+
+      function pastRawValue(eventNames, columnIndex, date) {
+        var pastDate = moment(date).subtract(1, dateComparison.val()).format('YYYY-MM-DD');
+        var pastValue = numberWithCommas(pastValues[eventNames[columnIndex+1]][pastDate]);
+        var pastElement = $('<span class="content2">' + pastValue + '</span>');
+        return pastElement;
       };
 
       function addPercentChange(eventTableData) {
         var eventNames = [];
         var date;
-        var previousValues = [];
         var columnIndex = 0;
         
+        // Loop through every cell in the table 
         _.each($('.mp_chart_cell'), function(cell) {
+          // If it's a header cell, add the event to the eventNames list
           if ($(cell).parent().hasClass('mp_chart_header')) {
             eventNames.push($(cell).children('span:first').text());
           } else if ($(cell).hasClass('mp_chart_row_label')) {
             columnIndex = 0;
             date = $(cell).children('span:first').text();
           } else {
-            if (previousValues[columnIndex]) {
-              var newValue = parseInt($(cell).first().text());
-              var change = applyCss(newValue, previousValues, columnIndex, eventNames, date, percentChangeValues);
-              $(cell).append(change.element);
-              $(cell).css('background-color', change.color);
-              $(cell).children('span:first').text(numberWithCommas(newValue));
-              previousValues[columnIndex] = newValue;
-              columnIndex += 1;
-            } else {
-              var value = $(cell).children('span:first').text();
-              previousValues[columnIndex] = parseInt(value);
-              $(cell).children('span:first').text(numberWithCommas(value));
-              columnIndex += 1;
-            }
+            var newValue = parseFloat($(cell).first().text());
+            var change = applyCss(newValue, columnIndex, eventNames, date, percentChangeValues);
+            $(cell).append(change.percentElement);
+            $(cell).css('background-color', change.color);
+            $(cell).children('span:first').text(numberWithCommas(newValue));
+            var previousElement = pastRawValue(eventNames, columnIndex, date);
+            $(cell).prepend(previousElement);
+            columnIndex += 1;
           }
         });
       };
@@ -299,7 +318,7 @@
        */ 
       function renderTable(results, pastData) {
         values = results.values();
-        pastValues = pastData ? pastData.values() : {};
+        pastValues = pastValues ? _.extend(pastValues, pastData.values()) : pastData.values();
         console.log(pastValues);
         if (dateComparison.val() && typeof percentChangeValues === 'undefined') {
           percentChangeValues = comparisonChange(values, pastValues);
@@ -321,6 +340,7 @@
         }
         
         var rotatedData = transformData(eventTableData);
+        console.log(rotatedData);
         eventTable.MPTable('setData', rotatedData);
         addPercentChange(eventTableData, percentChangeValues);
       };
@@ -334,18 +354,26 @@
         var eventName = eventSelect.MPEventSelect('value');
         // var propName  = propSelect.MPPropertySelect('value');
         var dateRange = dateSelect.MPDatepicker('value');
-        var params = _.extend(dateRange, { unit: dateResolution.val() });
+        var baseParams = { 
+          unit: dateResolution.val(),
+          type: queryType.val()
+        };
+        var params = _.extend(dateRange, baseParams);
         if (eventName) {
           var pastData;
+
+          // If we want to compare to a previous date range
           if (dateComparison.val()) {
             oldDateRange = {};
             oldDateRange.from = moment(dateRange.from).subtract(1, dateComparison.val())._d;
             oldDateRange.to = moment(dateRange.to).subtract(1, dateComparison.val())._d;
-            oldParams = _.extend(oldDateRange, { unit: dateResolution.val() });
+            oldParams = _.extend(oldDateRange, baseParams);
             MP.api.segment(eventName, oldParams).done(function(results) {
               pastData = results;
             });
           }
+          
+          // Main query
           MP.api.segment(eventName, params).done(function(results) {
             // console.log(pastData.values());
             // console.log(results.values());
